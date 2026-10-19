@@ -28,3 +28,6 @@ web/dist/
 # Environment files
 .env.*
 !.env.example
+*.db-journal
+*.db-wal
+*.db-shm
