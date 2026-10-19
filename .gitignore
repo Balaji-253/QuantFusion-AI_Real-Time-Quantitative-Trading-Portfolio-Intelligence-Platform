@@ -1,0 +1,30 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+*.db
+*.sqlite*
+.DS_Store
+dist/
+build/
+*.egg-info/
+node_modules/
+web/dist/
+
+# Temporary backups
+*.bak
+*.backup
+*.signal-backup
+*.price-validation-backup
+*.volatility-backup
+*.risk-backup
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Environment files
+.env.*
+!.env.example

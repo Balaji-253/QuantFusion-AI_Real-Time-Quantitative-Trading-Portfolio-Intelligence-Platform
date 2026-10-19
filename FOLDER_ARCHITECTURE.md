@@ -1,0 +1,44 @@
+# Folder architecture
+
+```text
+quantfusion-ai/
+  .env.example
+  .gitignore
+    .gitignore
+    CACHEDIR.TAG
+    README.md
+        nodeids
+  Dockerfile
+  FOLDER_ARCHITECTURE.md
+  Makefile
+  README.md
+    __init__.py
+    config.py
+    database.py
+    main.py
+    market_data.py
+    models.py
+    portfolio.py
+    quant.py
+    risk.py
+    schemas.py
+      Dockerfile
+      index.html
+      package.json
+        App.tsx
+        main.tsx
+        styles.css
+      tsconfig.json
+      vite.config.ts
+  docker-compose.yml
+      overview.md
+    quant-methodology.md
+      local-development.md
+  pyproject.toml
+  quantfusion.db
+  requirements.txt
+    conftest.py
+    test_api.py
+    test_quant.py
+    test_risk.py
+```

@@ -1,0 +1,182 @@
+def test_health(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_latest_endpoint_contract(client):
+    response = client.get("/api/v1/market/latest")
+    assert response.status_code == 200
+    assert "items" in response.json()
+
+
+def test_symbols(client):
+    response = client.get("/api/v1/market/symbols")
+    assert response.status_code == 200
+    assert "SPY" in response.json()["symbols"]
+
+
+def test_portfolio_accounting_after_paper_buy(client, monkeypatch):
+    from app import main, portfolio
+
+    prices = {
+        "AAPL": {
+            "symbol": "AAPL",
+            "price": 250.0,
+            "volume": 1000,
+            "source": "synthetic",
+        }
+    }
+
+    monkeypatch.setattr(main, "latest_cache", lambda: prices)
+    monkeypatch.setattr(portfolio, "latest_cache", lambda: prices)
+
+    order_response = client.post(
+        "/api/v1/orders/paper",
+        json={
+            "symbol": "AAPL",
+            "side": "BUY",
+            "quantity": 1,
+            "idempotency_key": "test-portfolio-buy-0001",
+        },
+    )
+
+    assert order_response.status_code == 200, order_response.json()
+
+    response = client.get("/api/v1/portfolio")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["positions"]["AAPL"]["quantity"] == 1
+    assert data["cash"] == 99750.0
+    assert data["market_value"] == 250.0
+    assert data["equity"] == 100000.0
+    assert data["valuation_complete"] is True
+    assert data["mode"] == "PAPER_ONLY"
+
+
+def test_buy_rejected_when_cash_is_insufficient(client, monkeypatch):
+    from app import main, portfolio
+    from app.config import get_settings
+
+    settings = get_settings()
+
+    monkeypatch.setattr(
+        "app.risk.get_settings",
+        lambda: type(
+            "Settings",
+            (),
+            {
+                "initial_cash": 100.0,
+                "max_order_notional": settings.max_order_notional,
+                "max_position_quantity": settings.max_position_quantity,
+            },
+        )(),
+    )
+
+    prices = {
+        "AAPL": {
+            "symbol": "AAPL",
+            "price": 250.0,
+            "volume": 1000,
+            "source": "synthetic",
+        }
+    }
+
+    monkeypatch.setattr(main, "latest_cache", lambda: prices)
+    monkeypatch.setattr(portfolio, "latest_cache", lambda: prices)
+
+    response = client.post(
+        "/api/v1/orders/paper",
+        json={
+            "symbol": "AAPL",
+            "side": "BUY",
+            "quantity": 1,
+            "idempotency_key": "test-insufficient-cash-0001",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "Insufficient cash" in response.json()["detail"]
+
+
+def test_duplicate_idempotency_key_returns_same_order(client, monkeypatch):
+    from app import main
+
+    prices = {
+        "AAPL": {
+            "symbol": "AAPL",
+            "price": 250.0,
+            "volume": 1000,
+            "source": "synthetic",
+        }
+    }
+
+    monkeypatch.setattr(main, "latest_cache", lambda: prices)
+
+    payload = {
+        "symbol": "AAPL",
+        "side": "BUY",
+        "quantity": 1,
+        "idempotency_key": "test-idempotency-0001",
+    }
+
+    first = client.post("/api/v1/orders/paper", json=payload)
+    second = client.post("/api/v1/orders/paper", json=payload)
+
+    assert first.status_code == 200, first.json()
+    assert second.status_code == 200, second.json()
+    assert first.json()["id"] == second.json()["id"]
+    assert first.json()["order_id"] == second.json()["order_id"]
+
+    orders = client.get("/api/v1/orders")
+    assert orders.status_code == 200, orders.json()
+
+    matching = [
+        item
+        for item in orders.json()["items"]
+        if item["order_id"] == first.json()["order_id"]
+    ]
+
+    assert len(matching) == 1
+
+def test_idempotency_key_reuse_with_different_order_is_rejected(
+    client, monkeypatch
+):
+    from app import main
+
+    prices = {
+        "AAPL": {
+            "symbol": "AAPL",
+            "price": 250.0,
+            "volume": 1000,
+            "source": "synthetic",
+        },
+        "MSFT": {
+            "symbol": "MSFT",
+            "price": 300.0,
+            "volume": 1000,
+            "source": "synthetic",
+        },
+    }
+    monkeypatch.setattr(main, "latest_cache", lambda: prices)
+
+    first_payload = {
+        "symbol": "AAPL",
+        "side": "BUY",
+        "quantity": 1,
+        "idempotency_key": "test-key-reuse-different-order-0001",
+    }
+    second_payload = {
+        "symbol": "MSFT",
+        "side": "BUY",
+        "quantity": 1,
+        "idempotency_key": "test-key-reuse-different-order-0001",
+    }
+
+    first = client.post("/api/v1/orders/paper", json=first_payload)
+    second = client.post("/api/v1/orders/paper", json=second_payload)
+
+    assert first.status_code == 200, first.json()
+    assert second.status_code == 409, second.json()
+    assert "Idempotency key already used" in second.json()["detail"]
